@@ -1,7 +1,10 @@
 # Synchronization
 
 This practice session is about yet more ways threads can be synchronized. 
-Read the introduction for each chapter and try to solve the tasks for it. 
+Read the introduction for each chapter and try to solve the tasks for it.
+The aim is not as much to solve the tasks but to learn about Java's different built-in tools. 
+Read the javadocs of the relevant classes before googling stackoverflow. 
+This is important stuff you can use later in your career. 
 
 ## ExecutorService
 
@@ -54,18 +57,14 @@ Scheduling a task returns a `ScheduledFuture<T>` object that can be used to canc
 
 Suppose you want to write your own `Future<T>` class. 
 It should have a method `get` that returns the value or blocks until it's available.
-It should also have a method `complete` to set the value and unblock waiting threads. 
+It should also have a method `complete` to set the value to return in `get` and unblock the threads waiting on `get`. 
 How to make the waiting threads block and only wake up when the value is set? 
 
-A CountdownLatch is a perfect tool for having threads wait for each other.
-When creating the latch, you must specify a **count** - the number of tasks that are expected to be completed.
-The threads that are waiting for the tasks to finish call the `await` method. 
-After completing each task, `countDown` should be called to reduce the count.
-Once the count reaches zero, all waiting threads are unblocked.
-
-Note that CountdownLatch is a *synchronizer*.  
-Any changes made to an object before calling `countDown` are guaranteed to be visible to threads that call `await` before accessing that object. 
-Use of the `synchronized` keyword is not necessary for synchronizing these changes.        
+`java.util.concurrent.CountDownLatch` is a tool for having threads wait until a set of operations complete. 
+When creating the latch, you must specify a **count** - the number of operations that must complete before the waiting threads can continue.
+The threads that want to wait for the operations to complete should call the `await` method of the latch - this will block until the operations have completed.  
+After completing each operation, the `countDown` method of the latch should be called to reduce the count.
+Once the count reaches zero, all the waiting threads are unblocked.      
 
 **Task:** Open the `tasks.CountdownLatchTask` class and fill the missing parts.  
 
@@ -109,9 +108,7 @@ While the idea of wait/notifyAll sounds simple, there are a few gotchas to this 
 
 **Task:** Open the `tasks.WaitNotifyTask` class and fill the missing parts.
 
-## Concurrent collections
-
-### CopyOnWriteArrayList
+## CopyOnWriteArrayList
 
 As you may have noticed, ArrayLists don't like being changed while they are being iterator with a for-each loop. 
 Also, ArrayLists are not *thread-safe* - when using an ArrayList from multiple threads, access must be synchronized.  

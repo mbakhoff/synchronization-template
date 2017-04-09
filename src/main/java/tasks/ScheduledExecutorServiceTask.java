@@ -21,8 +21,8 @@ public class ScheduledExecutorServiceTask extends Application {
     public void start(Stage primaryStage) throws Exception {
         // TODO:
         // create a ScheduledExecutorService with exactly 1 thread
-        // schedule annoyWithClippy(primaryStage) to repeat every 2sec
-        // schedule annoyWithWindowsUpdate(primaryStage) to repeat every 3sec
+        // schedule annoyWithClippy(primaryStage) to repeat every 3sec
+        // schedule annoyWithWindowsUpdate(primaryStage) to repeat every 4sec
 
         primaryStage.setOnCloseRequest(e -> {
             // TODO shut down the executor
@@ -39,6 +39,7 @@ public class ScheduledExecutorServiceTask extends Application {
             // TODO cancel the windows update spam
         });
 
+        // the stop buttons are in a separate window, but sometimes it starts behind other windows
         primaryStage.setScene(new Scene(new Group(new FlowPane(stopClippy, stopShutdown))));
         primaryStage.show();
     }

@@ -15,7 +15,7 @@ public class ExecutorServiceTask {
         List<Future<FileResult>> futureList = new ArrayList<>();
         // TODO:
         // create an ExecutorService with exactly 4 threads
-        // submit tasks that run readFile, one task per file; use Callable<FileResult>
+        // submit tasks that run readFile, one task per file from getFileList; use Callable<FileResult>
         // collect the task futures into futureList
 
         List<FileResult> resultList = new ArrayList<>();
