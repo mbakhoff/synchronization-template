@@ -111,7 +111,7 @@ Calling `get` on `cfSum` and `cfProduct` and will block until the values are act
 Once the numbers have been calculated and `cfNumbers` is completed, then both `cfSum` and `cfProduct` can be computed and their `get` methods will no longer block.
 
 CompletableFutures have many other useful methods.
-Among others is the `whenComplete` method which can specify a function to run when the CompletableFuture is completed.
+Among others is the `whenComplete` method which can be used to specify a function to be run when the CompletableFuture is completed.
 For example, the previous example (without the product part) could be rewritten as follows:
 
 ```
@@ -216,7 +216,7 @@ class SimpleBlockingQueue<T> {
         synchronized (items) {
             while (items.isEmpty())
                 items.wait();
-            return items.get(0);
+            return items.remove(0);
         }
     }
 }
