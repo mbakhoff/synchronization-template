@@ -4,18 +4,24 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class MyLatch {
 
+    private int count;
+
     public MyLatch(int count) {
-        // TODO: initialize the count
+        this.count = count;
     }
 
     public void await() throws InterruptedException {
-        // TODO: wait for the count to reach zero
-        // use synchronized + wait
+        synchronized (this) {
+            while (count > 0)
+                this.wait();
+        }
     }
 
     public void countDown() {
-        // TODO: decrement the count
-        // use synchronized + notifyAll
+        synchronized (this) {
+            count--;
+            this.notifyAll();
+        }
     }
 
     // run this to test your solution. should print "looks good!"

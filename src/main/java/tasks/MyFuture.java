@@ -1,25 +1,31 @@
 package tasks;
 
 import java.io.FileNotFoundException;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class MyFuture<T> {
 
-    // TODO: use a CountDownLatch for blocking get (count 1)
+    private T value;
+    private Exception exception;
+    private final CountDownLatch latch = new CountDownLatch(1);
 
     public T get() throws Exception {
-        // TODO: wait for the value or exception to be set
-        // throw the exception if it set, otherwise return the value
-        return null;
+        latch.await();
+        if (exception != null)
+            throw new ExecutionException(exception);
+        return value;
     }
 
     public void complete(T value) {
-        // TODO: store the value, unblock get
+        this.value = value;
+        latch.countDown();
     }
 
     public void completeExceptionally(Exception e) {
-        // TODO: store the exception, unblock get
+        this.exception = e;
+        latch.countDown();
     }
 
     // run this to test your solution. should print "looks good!"
