@@ -1,72 +1,193 @@
 # Synchronization
 
 This practice session is about yet more ways threads can be synchronized.
-Read the introduction for each chapter and try to solve the tasks for it.
-The aim is not as much to solve the tasks but to learn about Java's different built-in tools.
-Read the javadocs of the relevant classes before googling stackoverflow.
-This is important stuff you can use later in your career.
+Read the introduction for each section and try to solve the tasks for it.
+Try to read the javadoc of the relevant classes before googling stackoverflow.
 
-## ExecutorService
+## CompletableFuture
 
-Suppose you have thousands of large text files with numbers in them.
-The task is to find the sum of numbers in each file.
-It would be unreasonable to make a new thread for each file because more time would be spent on switching between threads than on the actual work.
+The basic way to run some code in parallel is to use threads.
+A thread is given a `Runnable` and the thread will start the `run` method.
 
-Thread pools allow you to create a fixed number of threads and assign them any number of tasks to them.
-The thread pool will automatically distribute the tasks between the threads.
+```
+new Thread(new Runnable() {
+    @Override
+    public void run() {
+        try {
+            // calculate some result
+        } catch (Exception e) {
+            // maybe something will catch it :/
+            throw new RuntimeException(e);
+        }
+    }
+}).start();
+```
 
-Thread pools can be created using static factory methods in `java.util.concurrent.Executors`.
-After creating an ExecutorService (object representing the thread pool), you can submit tasks to it.
-After submitting all the tasks, the executor should be shut down (preferably in a finally block).
-Shutting down the executor disallows submitting new tasks and terminates threads after all submitted tasks have completed.
-Threads of an active executor can prevent an application from closing - always shut down your executors.
+When the result is needed in some other thread, then some trickery is needed to pass it around.
+One way is to use a `BlockingQueue`, another is to use shared state with explicit synchronization.
+Most of the time, the exceptions are forgotten and the multithreaded program is full of bugs.
 
-The tasks submitted to the thread pools must implement either `Runnable` or `Callable<T>`.
-Use Runnable if the task doesn't produce any results.
-Use Callable if the task produces a result that the task submitter needs to see.
-Submitting a task to the executor will return a *future*.
+`CompletableFuture` is a class that makes it easy to pass around the calculated result between threads while also correctly handling exceptions.
+Here is how it looks in action:
 
-java.util.concurrent.Future<V>:
-*A Future represents the result of an asynchronous computation.
-Methods are provided to check if the computation is complete, to wait for its completion, and to retrieve the result of the computation.
-The result can only be retrieved using method `get` when the computation has completed, blocking if necessary until it is ready.*
+```
+static CompletableFuture<List<Integer>> findNumbers() {
+    CompletableFuture<List<Integer>> cf = new CompletableFuture<>();
+    new Thread(new Runnable() {
+        @Override
+        public void run() {
+            try {
+                List<Integer> result = new ArrayList<>();
+                for (int i = 0; i < 10; i++)
+                    result.add(i);
+                cf.complete(result);
+            } catch (Exception e) {
+                cf.completeExceptionally(e);
+            }
+        }
+    }).start();
+    return cf;
+}
 
-**Task:** Open the `tasks.ExecutorServiceTask` class and fill the missing parts.
+public static void main(String[] args) throws Exception {
+    CompletableFuture<List<Integer>> numbersHolder = findNumbers();
+    List<Integer> numbers = numbersHolder.get();
+    System.out.println(numbers);
+}
+```
 
-## ScheduledExecutorService
+What is going one here?
+1. `main` calls `findNumbers`.
+2. `findNumbers` creates a new `CompletableFuture` object.
+   a CompletableFuture is a placeholder that can hold the result of some computation.
+   Initially, it is empty.
+3. A new thread is started to calculate some result.
+4. `findNumbers` returns the CompletableFuture immediately, without waiting for the thread to complete its work.
+5. `main` will call `get` on the CompletableFuture.
+   This will **block** the main thread (cause the thread to sleep) until the CompletableFuture is completed (some result is stored in it).
 
-Suppose you want to repeat several different tasks periodically or after a specific time.
-The naive solution would be to create a bunch of threads that do Thread.sleep for a while and then execute the task.
-This solution is suboptimal, because it wastes resources by creating too many threads and cancelling the tasks correctly can be a lot of work.
+Meanwhile the thread is calculating the result.
+When it's done, it complete the CompletableFuture by storing the result in it (either the value or an exception).
+This will unblock any waiting `get` method calls.
 
-Thread pools allow you to efficiently schedule tasks:
-* repeat at fixed rate (after a fixed period, no matter what)
-* repeat at fixed delay (fixed period after the last execution finished)
-* run after a fixed delay, no repeating
-* cancel tasks
+Note that if the CompletableFuture was completed with an exception, then calling the `get` method on it will throw the same exception.
+This makes it easy to pass any exceptions from the result calculating thread to the thread that uses the result.
 
-The scheduler (ScheduledExecutorService) can be created using static methods in `java.util.concurrent.Executors`.
-Unlike ExecutorService, shutting down the ScheduledExecutorService will cancel all scheduled tasks without waiting them to finish.
-Shutting down the ScheduledExecutorService is still required, otherwise the application won't close due to live threads.
+The real strength of CompletableFuture is **composability**.
+It's easy to transform and combine the results in the CompletableFuture objects.
 
-Scheduling a task returns a `ScheduledFuture<T>` object that can be used to cancel the task at any time or get the result of the scheduled `Callable<T>`.
+The `findNumbers` method calculates some numbers in parallel.
+Imagine we need to find two results based on the calculated numbers: the sum of the numbers and the product of the numbers.
+One way would be to modify the original `findNumbers` method and add the calculation there.
+CompletableFuture provides a more flexible alternative:
 
-**Task:** Open the `tasks.ScheduledExecutorServiceTask` class and fill the missing parts.
+```
+public static void main(String[] args) throws Exception {
+    CompletableFuture<List<Integer>> cfNumbers = findNumbers();
+    CompletableFuture<Integer> cfSum = cfNumbers.thenApply(numbers -> {
+        int sum = 0;
+        for (int number : numbers)
+            sum += number;
+        return sum;
+    });
+    CompletableFuture<Integer> cfProduct = cfNumbers.thenApply(numbers -> {
+        int product = 0;
+        for (int number : numbers)
+            product *= number;
+        return product;
+    });
+
+    System.out.println("sum " + cfSum.get());
+    System.out.println("product " + cfProduct.get());
+}
+```
+
+The method `thenApply` takes the value of one CompletableFuture, computes a new value based on it and stores it in a new CompletableFuture.
+The new CompletableFuture is immediately returned, but the actual computation may happen later.
+
+In the sample above, `findNumbers` starts the thread for calculating the numbers.
+`thenApply` is used to create `cfSum` and `cfProduct`, whose values are then printed out.
+Calling `get` on `cfSum` and `cfProduct` and will block until the values are actually available.
+Once the numbers have been calculated and `cfNumbers` is completed, then both `cfSum` and `cfProduct` can be computed and their `get` methods will no longer block.
+
+CompletableFutures have many other useful methods.
+Among others is the `whenComplete` method which can specify a function to run when the CompletableFuture is completed.
+For example, the previous example (without the product part) could be rewritten as follows:
+
+```
+public static void main(String[] args) throws Exception {
+    findNumbers().thenApply(numbers -> {
+        int sum = 0;
+        for (int number : numbers)
+            sum += number;
+        return sum;
+    }).whenComplete((sum, error) -> {
+        if (error == null) {
+            System.out.println("the sum is " + sum);
+        } else {
+            System.out.println("failed to compute the sum: " + error);
+        }
+    });
+}
+```
+
+### Task: WikiAnalyzer1
+
+1. Write a method for downloading articles from wikipedia:
+   ```
+   CompletableFuture<String> download(String url) { .. }
+   ```
+2. Write a method for counting the dots (`.`) in a string:
+   ```
+   long countDots(String str) { .. }
+   ```
+3. Use `thenApply` and `whenComplete` to download some articles in parallel and print out the number of dots in each of them.
+   Don't use `get` on the CompletableFuture.
+
+### Task: WikiAnalyzer2
+
+1. Make a copy of WikiAnalyzer1
+2. Change the copy so the articles are downloaded in parallel, but the results are printed out by the main method.
+   1. use the same `thenApply`
+   2. replace `whenComplete` with `get`
+   3. make sure the downloads run in parallel (create all CompletableFutures before calling `get` on any of them)
+   4. try to download an invalid article (use some garbage for the url) and ensure the exception reaches the main method
 
 ## CountdownLatch
 
-Suppose you want to write your own `Future<T>` class.
-It should have a method `get` that returns the value or blocks until it's available.
-It should also have a method `complete` to set the value to return in `get` and unblock the threads waiting on `get`.
-How to make the waiting threads block and only wake up when the value is set?
+Suppose you want to write your own CompletableFuture class.
+How to make the threads block when `get` is called, but the value is not available yet?
+How to unblock the threads when the value becomes available?
 
-`java.util.concurrent.CountDownLatch` is a tool for having threads wait until a set of operations complete.
-When creating the latch, you must specify a **count** - the number of operations that must complete before the waiting threads can continue.
-`await` method of the latch should be called in the threads that want to wait for the operations to complete - this will block the thread until the operations have completed.
-After completing each operation, the `countDown` method of the latch should be called to reduce the count.
-Once the count reaches zero, all the waiting threads are unblocked.
+`java.util.concurrent.CountDownLatch` is a tool for this exact purpose.
+When creating the latch, a **count** (non-negative integer) must be specified.
+The latch has a method named `await` - when it is called and the count is larger than zero, then the method will block.
+The latch also has the `countDown` method - this will reduce the count by one.
+Once the count reaches zero, all threads that are blocked at `await` are unblocked.
 
-**Task:** Open the `tasks.CountdownLatchTask` class and fill the missing parts.
+Here's an example that compiles some java source code and starts it when everything is ready:
+```
+List<String> sources = Arrays.asList("Main.java", "Service.java", "Item.java");
+CountDownLatch latch = new CountDownLatch(sources.size());
+for (String source : sources) {
+    new Thread(() -> {
+        compile(source);
+        latch.countDown();
+    }).start();
+}
+
+latch.await(); // blocks until everything's compiled
+startApplication();
+```
+
+### Task: MyFuture
+
+Implement your own CompletableFuture.
+It should have the following functionality:
+
+* a `get` method that returns the value or blocks until it's available.
+* a `complete` method to set the value and unblock the waiting threads.
+* a `completeExceptionally` method to set an exception and unblock the waiting threads.
 
 ## wait/notifyAll
 
@@ -74,62 +195,72 @@ Suppose you want to write your own CountDownLatch class.
 It should have the methods `countDown` and `await`.
 Most importantly, `await` should efficiently block until the count reaches zero.
 
-This task can be solved using the most basic synchronization tools java provides: `Object#wait` and `Object#notifyAll`.
+This task can be solved using the most basic synchronization tools that Java provides: `Object#wait` and `Object#notifyAll`.
 The idea is not complicated: the threads calling `wait` on some object will block until another thread calls `notifyAll` on the same object.
 Both `wait` and `notifyAll` must be called on the same object, but it doesn't really matter which object - it's only purpose is bring together the waiters and notifiers.
-* `wait` - *Causes the current thread to wait until another thread invokes the notifyAll() method for this object.*
-* `notifyAll` - *Wakes up all threads that are waiting on this object's monitor.*
 
-This is how using wait/notifyAll should look like:
+Here's an example of wait/notifyAll:
 ```
-void waitForCondition() throws InterruptedException {
-    synchronized (this) {
-        while (/* condition we are waiting for is not right */) {
-            this.wait();
+class SimpleBlockingQueue<T> {
+
+    private final List<T> items = new ArrayList<>();
+
+    public void put(T item) {
+        synchronized (items) {
+            items.add(item);
+            items.notifyAll();
+        }
+    }
+
+    public T take() throws InterruptedException {
+        synchronized (items) {
+            while (items.isEmpty())
+                items.wait();
+            return items.get(0);
         }
     }
 }
-
-void changeCondition() {
-    synchronized (this) {
-        /* change condition */
-        this.notifyAll();
-    }
-}
 ```
 
-While the idea of wait/notifyAll sounds simple, there are a few gotchas to this mechanism:
-* A call to `wait` can sometimes randomly return (stop blocking) even before anyone has called `notifyAll` on the object (spurious wakeups).
-  Due to this, calling `wait` should always be in a loop that checks if waiting should continue (checks some condition).
-* When `notifyAll` is called on an object, only the threads that have called `wait` on the same object are unblocked.
-  Before calling `wait` on an object the thread must enter a synchronized block with that object as the monitor.
-* To call `wait` on an object, you must be in a `synchronized` block with that object as the monitor.
-  Calling `wait` will release the monitor of that synchronized block and block the thread.
-  Once the monitor is released, other threads can acquire the monitor.
-  When the original thread wakes up again (after `notifyAll`), it will reacquire the monitor (and may need to wait on other threads before it can do so).
-  This is a significant exception to how the synchronized keyword works.
+While the idea of wait/notifyAll sounds simple, there are a few gotchas to this mechanism.
 
-**Task:** Open the `tasks.WaitNotifyTask` class and fill the missing parts.
+[JLS 17.1](https://docs.oracle.com/javase/specs/jls/se9/html/jls-17.html#jls-17.1)
+*Each object in Java is associated with a monitor, which a thread can lock or unlock.
+Only one thread at a time may hold a lock on a monitor.
+Any other threads attempting to lock that monitor are blocked until they can obtain a lock on that monitor.*
 
-## CopyOnWriteArrayList
+```
+synchronized (this) { // thread locks the monitor of this
+  // code
+} // thread unlocks the monitor of this
+```
 
-As you may have noticed, ArrayLists don't like being changed while they are being iterator with a for-each loop.
-Also, ArrayLists are not *thread-safe* - when using an ArrayList from multiple threads, access must be synchronized.
-Unsynchronized use leads to exceptions such as `ConcurrentModificationException` and `NullPointerException` will be thrown seemingly randomly.
+* Calling `notifyAll` on an object wakes up all threads that are calling `wait` on the same object.
+  To call `notifyAll` or `wait` on an object, the calling thread must be holding a lock on the object's monitor.
+* Calling `wait` will block the thread and **unlock the monitor**.
+  When a waiting thread is unblocked, then it must lock the monitor again before it can continue (and possibly wait for the lock).
+* A call to `wait` can sometimes randomly unblock even before `notifyAll` is called.
+  This is called a [*spurious wake-up*](https://docs.oracle.com/javase/specs/jls/se9/html/jls-17.html#jls-17.2.1).
+  Calling `wait` should always be in a loop that checks if waiting should continue.
 
-One way to use ArrayList from multiple threads is to use the `synchronized` keyword.
-That works and guarantees that only one thread is accessing the list at any given time.
-However, when threads are mostly reading the list and modifications are very rare, then the synchronization approach can be slow, because threads will be often blocked by other readers.
+### Task: MyLatch
 
-An alternative to ArrayList + `synchronized` is to use a special class called `CopyOnWriteArrayList`.
-Each time the list is changed, the list creates a copy of its internal contents array and applies the changes to the copy (copy-on-write).
-Once the copy is ready, the original contents array is replaced with the copy and the old array is discarded.
+Implement your own CountDownLatch.
+The latch must have the `await` and `countDown` methods.
+`await` must block efficiently using wait/notifyAll.
 
-The `CopyOnWriteArrayList` is *thread-safe* - you don't need to use the `synchronized` keyword to use it from different theads.
-Multiple threads can read and iterate the list concurrently.
-Only one thread can change the list at a time (other calls to add/remove etc will block).
-When the list is changed, any already running for-each loops will continue on the old contents array and won't see the changes.
+## InterruptedException
 
-Use CopyOnWriteArrayList when a list is used by multiple threads but changes are infrequent.
+The `Object#wait`, `Thread#sleep` and methods built on them can throw the InterruptedException.
+What does it mean and when is it thrown?
 
-**Task:** Open the `tasks.COWTask` class and fill the missing parts.
+It's not possible to just stop/kill threads, because that would prevent unlocking all the locks the thread is holding and running the finally blocks.
+As an alternative, a thread can be interrupted.
+Interrupting a thread is a way to tell it to please shut down as soon as possible.
+
+InterruptedException is thrown if and only if the `interrupt` method is called on the thread that is running the interruptible code.
+If the thread is currently waiting in an interruptible method (wait, sleep etc.) then the method immediately stops waiting and throws an InterruptedException.
+Otherwise, the interrupted flag is set in the thread and the next time it reaches an interruptible method, the exception is thrown.
+Interrupts can only successfully stop the thread when the program's code doesn't ignore the InterruptedException and/or the interrupt flag.
+
+The interrupted flag can be checked using `Thread#isInterrupted` and cleared using `Thread#interrupted` (stupid and confusing naming).
