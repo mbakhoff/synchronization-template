@@ -56,7 +56,7 @@ public static void main(String[] args) throws Exception {
 }
 ```
 
-What is going one here?
+What is going on here?
 1. `main` calls `findNumbers`.
 2. `findNumbers` creates a new `CompletableFuture` object.
    a CompletableFuture is a placeholder that can hold the result of some computation.
@@ -67,8 +67,8 @@ What is going one here?
    This will **block** the main thread (cause the thread to sleep) until the CompletableFuture is completed (some result is stored in it).
 
 Meanwhile the thread is calculating the result.
-When it's done, it complete the CompletableFuture by storing the result in it (either the value or an exception).
-This will unblock any waiting `get` method calls.
+When it's done, it will complete the CompletableFuture by storing the result in it (either the value or an exception).
+This will unblock any threads waiting at the `get` method.
 
 Note that if the CompletableFuture was completed with an exception, then calling the `get` method on it will throw the same exception.
 This makes it easy to pass any exceptions from the result calculating thread to the thread that uses the result.
@@ -107,7 +107,7 @@ The new CompletableFuture is immediately returned, but the actual computation ma
 
 In the sample above, `findNumbers` starts the thread for calculating the numbers.
 `thenApply` is used to create `cfSum` and `cfProduct`, whose values are then printed out.
-Calling `get` on `cfSum` and `cfProduct` and will block until the values are actually available.
+Calling `get` on `cfSum` and `cfProduct` and will block the calling thread until the values are actually available.
 Once the numbers have been calculated and `cfNumbers` is completed, then both `cfSum` and `cfProduct` can be computed and their `get` methods will no longer block.
 
 CompletableFutures have many other useful methods.
@@ -161,7 +161,7 @@ How to unblock the threads when the value becomes available?
 
 `java.util.concurrent.CountDownLatch` is a tool for this exact purpose.
 When creating the latch, a **count** (non-negative integer) must be specified.
-The latch has a method named `await` - when it is called and the count is larger than zero, then the method will block.
+The latch has a method named `await` - when it is called and the count is larger than zero, then the calling thread will be blocked.
 The latch also has the `countDown` method - this will reduce the count by one.
 Once the count reaches zero, all threads that are blocked at `await` are unblocked.
 
@@ -185,7 +185,7 @@ startApplication();
 Implement your own CompletableFuture.
 It should have the following functionality:
 
-* a `get` method that returns the value or blocks until it's available.
+* a `get` method that returns the value or blocks the calling thread until it's available.
 * a `complete` method to set the value and unblock the waiting threads.
 * a `completeExceptionally` method to set an exception and unblock the waiting threads.
 
@@ -229,10 +229,15 @@ While the idea of wait/notifyAll sounds simple, there are a few gotchas to this 
 Only one thread at a time may hold a lock on a monitor.
 Any other threads attempting to lock that monitor are blocked until they can obtain a lock on that monitor.*
 
+Note that each thread remembers all the monitors it has locked but not yet unlocked.
+The thread is "holding a lock" on such monitors.
+
 ```
-synchronized (this) { // thread locks the monitor of this
-  // code
-} // thread unlocks the monitor of this
+// thread locks the monitor of this (can block)
+synchronized (this) {
+  // code runs while holding the lock
+}
+// thread unlocks the monitor of this
 ```
 
 * Calling `notifyAll` on an object wakes up all threads that are calling `wait` on the same object.
