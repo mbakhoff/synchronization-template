@@ -229,8 +229,8 @@ While the idea of wait/notifyAll sounds simple, there are a few gotchas to this 
 Only one thread at a time may hold a lock on a monitor.
 Any other threads attempting to lock that monitor are blocked until they can obtain a lock on that monitor.*
 
-Note that each thread remembers all the monitors it has locked but not yet unlocked.
-The thread is "holding a lock" on such monitors.
+Note that a monitor remembers the thread that has locked, but not yet unlocked it.
+The thread is "holding a lock" on that monitor.
 
 ```
 // thread locks the monitor of this (can block)
