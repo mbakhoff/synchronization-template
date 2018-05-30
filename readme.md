@@ -131,6 +131,33 @@ public static void main(String[] args) throws Exception {
 }
 ```
 
+If the inlined lambdas are confusing, then try writing them out.
+Here's the last example again, with some helping variables:
+```
+public static void main(String[] args) throws Exception {
+    // both Function and BiConsumer are built-in functional interfaces
+
+    // function that takes List<Integer> as an argument, returns Integer
+    Function<List<Integer>, Integer> numberListToSum = numbers -> {
+        int sum = 0;
+        for (int number : numbers)
+            sum += number;
+        return sum;
+    };
+
+    // function that takes two arguments: Integer, Throwable
+    BiConsumer<Integer, Throwable> printResults = (sum, error) -> {
+        if (error == null) {
+            System.out.println("the sum is " + sum);
+        } else {
+            System.out.println("failed to compute the sum: " + error);
+        }
+    };
+
+    findNumbers().thenApply(numberListToSum).whenComplete(printResults);
+}
+```
+
 ### Task: WikiAnalyzer1
 
 1. Write a method for downloading articles from wikipedia:
