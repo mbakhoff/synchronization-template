@@ -24,8 +24,8 @@ new Thread(new Runnable() {
 ```
 
 When the result is needed in some other thread, then some trickery is needed to pass it around.
-One way is to use a `BlockingQueue`, another is to use shared state with explicit synchronization.
-Most of the time, the exceptions are forgotten and the multithreaded program is full of bugs.
+One way is to use a `BlockingQueue`, another is to use shared state and `synchronized` blocks.
+It's even more tricky to correctly pass an exception to the other threads when something crashes.
 
 `CompletableFuture` is a class that makes it easy to pass around the calculated result between threads while also correctly handling exceptions.
 Here is how it looks in action:
@@ -80,7 +80,7 @@ When `get` is called, it will throw the same exception.
 This makes it easy to pass any exceptions from the background thread to the thread that uses the result.
 
 The real strength of CompletableFuture is **composability**.
-It's very easy to add more tasks to the background thread that should only be done when the result is ready.
+CompletableFuture makes it easy to schedule more methods to run once the CompletableFuture is completed with a result.
 
 The `findFileSizesAsync` method finds the file sizes.
 It may be useful to also find the total size of all the files, but that can only be done after the files are collected.
