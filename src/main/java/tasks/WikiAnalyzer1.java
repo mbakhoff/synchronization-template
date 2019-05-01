@@ -4,12 +4,11 @@ import java.util.concurrent.CompletableFuture;
 
 public class WikiAnalyzer1 {
 
-    public static void main(String[] args) {
-        // TODO: use download + thenApply + whenComplete
-        // print out the number of dots in the following
-        // articles or an exception on failure:
-        // https://en.wikipedia.org/wiki/Linux
-        // https://en.wikipedia.org/wiki/Microsoft_Windows
+    public static void main(String[] args) throws Exception {
+        // TODO: download all the articles in parallel
+        //  calculate and print out the number of dots in the main method
+        //  https://en.wikipedia.org/wiki/Linux
+        //  https://en.wikipedia.org/wiki/Microsoft_Windows
     }
 
     public static long countDots(String str) {

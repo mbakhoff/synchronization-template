@@ -11,15 +11,15 @@ A thread is given a `Runnable` and the thread will start the `run` method.
 
 ```
 new Thread(new Runnable() {
-    @Override
-    public void run() {
-        try {
-            // calculate some result
-        } catch (Exception e) {
-            // maybe something will catch it :/
-            throw new RuntimeException(e);
-        }
+  @Override
+  public void run() {
+    try {
+      // calculate some result
+    } catch (Exception e) {
+      // maybe something will catch it :/
+      throw new RuntimeException(e);
     }
+  }
 }).start();
 ```
 
@@ -31,132 +31,120 @@ Most of the time, the exceptions are forgotten and the multithreaded program is 
 Here is how it looks in action:
 
 ```
-static CompletableFuture<List<Integer>> findNumbers() {
-    CompletableFuture<List<Integer>> cf = new CompletableFuture<>();
-    new Thread(new Runnable() {
-        @Override
-        public void run() {
-            try {
-                List<Integer> result = new ArrayList<>();
-                for (int i = 0; i < 10; i++)
-                    result.add(i);
-                cf.complete(result);
-            } catch (Exception e) {
-                cf.completeExceptionally(e);
-            }
-        }
-    }).start();
-    return cf;
+static Map<Path, Long> findFileSizes(Path root) throws IOException {
+  Map<Path, Long> files = new HashMap<>();
+  Files.walkFileTree(root, new SimpleFileVisitor<>() {
+    @Override
+    public FileVisitResult visitFile(Path file, BasicFileAttributes fileInfo) {
+      files.put(file, fileInfo.size());
+      return FileVisitResult.CONTINUE;
+    }
+  });
+  return files;
+}
+
+static CompletableFuture<Map<Path, Long>> findFileSizesAsync(Path root) {
+  CompletableFuture<Map<Path, Long>> cf = new CompletableFuture<>();
+  new Thread(() -> {
+    try {
+      cf.complete(findFileSizes(root));
+    } catch (Exception e) {
+      cf.completeExceptionally(e);
+    }
+  }).start();
+  return cf;
 }
 
 public static void main(String[] args) throws Exception {
-    CompletableFuture<List<Integer>> numbersHolder = findNumbers();
-    List<Integer> numbers = numbersHolder.get();
-    System.out.println(numbers);
+  CompletableFuture<Map<Path, Long>> srcFuture = findFileSizesAsync(Path.of("src"));
+  CompletableFuture<Map<Path, Long>> nonexistingFuture = findFileSizesAsync(Path.of("nonexisting"));
+  // both src,nonexisting run in parallel
+  Set<Path> sourceFiles = srcFuture.get().keySet(); // get waits until result is ready
+  System.out.println(sourceFiles);
+  Set<Path> nothing = nonexistingFuture.get().keySet(); // throws exception
 }
 ```
 
 What is going on here?
-1. `main` calls `findNumbers`.
-2. `findNumbers` creates a new `CompletableFuture` object.
-   a CompletableFuture is a placeholder that can hold the result of some computation.
-   Initially, it is empty.
-3. A new thread is started to calculate some result.
-4. `findNumbers` returns the CompletableFuture immediately, without waiting for the thread to complete its work.
-5. `main` will call `get` on the CompletableFuture.
-   This will **block** the main thread (cause the thread to sleep) until the CompletableFuture is completed (some result is stored in it).
+1. `main` calls `findFileSizesAsync`.
+2. `findFileSizesAsync` creates a new `CompletableFuture` object that works as a placeholder for the result.
+   Initially, it is empty, because the result is not computed yet.
+3. A new background thread is started to find the files and their sizes.
+4. `findFileSizesAsync` returns the CompletableFuture immediately, without waiting for the thread to complete its work.
+5. `main` calls another `findFileSizesAsync` to find the file sizes of another directory, which starts another background thread.
+6. `main` will call `get` on both CompletableFutures.
+   Calling `get` will **block** the main thread (cause the thread to sleep) until the background thread has finished its work and stored the result in the CompletableFuture.
 
-Meanwhile the thread is calculating the result.
-When it's done, it will complete the CompletableFuture by storing the result in it (either the value or an exception).
-This will unblock any threads waiting at the `get` method.
-
-Note that if the CompletableFuture was completed with an exception, then calling the `get` method on it will throw the same exception.
-This makes it easy to pass any exceptions from the result calculating thread to the thread that uses the result.
+Note that if finding the file sizes fails, then the exception is stored inside the CompletableFuture instead of the result.
+When `get` is called, it will throw the same exception.
+This makes it easy to pass any exceptions from the background thread to the thread that uses the result.
 
 The real strength of CompletableFuture is **composability**.
-It's easy to transform and combine the results in the CompletableFuture objects.
+It's very easy to add more tasks to the background thread that should only be done when the result is ready.
 
-The `findNumbers` method calculates some numbers in parallel.
-Imagine we need to find two results based on the calculated numbers: the sum of the numbers and the product of the numbers.
-One way would be to modify the original `findNumbers` method and add the calculation there.
+The `findFileSizesAsync` method finds the file sizes.
+It may be useful to also find the total size of all the files, but that can only be done after the files are collected.
+One way would be to modify the original `findFileSizesAsync` method and add the calculation there.
+Unfortunately that would make it more difficult to return the result to some other thread, because now there's two pieces of data: the files and the total.
+Also, in case of exceptions, it's hard to figure out which part of the calculation failed.
 CompletableFuture provides a more flexible alternative:
 
 ```
 public static void main(String[] args) throws Exception {
-    CompletableFuture<List<Integer>> cfNumbers = findNumbers();
-    CompletableFuture<Integer> cfSum = cfNumbers.thenApply(numbers -> {
-        int sum = 0;
-        for (int number : numbers)
-            sum += number;
-        return sum;
-    });
-    CompletableFuture<Integer> cfProduct = cfNumbers.thenApply(numbers -> {
-        int product = 0;
-        for (int number : numbers)
-            product *= number;
-        return product;
-    });
+  CompletableFuture<Map<Path, Long>> filesFuture = findFileSizesAsync(Path.of("src"));
+  CompletableFuture<Long> totalSizeFuture = alsoGetTheTotalSize(filesFuture);
 
-    System.out.println("sum " + cfSum.get());
-    System.out.println("product " + cfProduct.get());
+  filesFuture.thenAccept(files -> {
+    for (Map.Entry<Path, Long> e : files.entrySet()) {
+      System.out.println("file=" + e.getKey() + " size=" + e.getValue());
+    }
+  });
+
+  // do other stuff while the background thread does its thing
+  System.out.println("total size " + totalSizeFuture.get());
+}
+
+static CompletableFuture<Long> alsoGetTheTotalSize(CompletableFuture<Map<Path, Long>> filesFuture) {
+  return filesFuture.thenApply(files -> {
+    long total = 0;
+    for (long size : files.values())
+      total += size;
+    return total;
+  });
 }
 ```
 
-The method `thenApply` takes the value of one CompletableFuture, computes a new value based on it and stores it in a new CompletableFuture.
-The new CompletableFuture is immediately returned, but the actual computation may happen later.
+Here `main` calls `alsoGetTheTotalSize` and passes the CompletableFuture of the files.
+Next, `thenApply` is used to tell the background thread that after it has stored the result in `filesFuture`, it should also calculate the total size of the files and store that in another CompletableFuture.
+The new CompletableFuture for the total is immediately returned and the actual calculation will happen in the background thread once all the files have been found.
 
-In the sample above, `findNumbers` starts the thread for calculating the numbers.
-`thenApply` is used to create `cfSum` and `cfProduct`, whose values are then printed out.
-Calling `get` on `cfSum` and `cfProduct` and will block the calling thread until the values are actually available.
-Once the numbers have been calculated and `cfNumbers` is completed, then both `cfSum` and `cfProduct` can be computed and their `get` methods will no longer block.
+`main` also gives the background thread a new task using `thenAccept`: when the background thread is done with the files, it should print them all out.
+
+Both these extra tasks are done when the background thread calls `complete` on the first CompletableFuture.
 
 CompletableFutures have many other useful methods.
-Among others is the `whenComplete` method which can be used to specify a function to be run when the CompletableFuture is completed.
-For example, the previous example (without the product part) could be rewritten as follows:
+Among others is the `whenComplete` method which can be used to specify a function to be run when the CompletableFuture is completed, either successfully or with an exception.
+For example, finding and printing the total could be rewritten as follows:
 
 ```
 public static void main(String[] args) throws Exception {
-    findNumbers().thenApply(numbers -> {
-        int sum = 0;
-        for (int number : numbers)
-            sum += number;
-        return sum;
-    }).whenComplete((sum, error) -> {
-        if (error == null) {
-            System.out.println("the sum is " + sum);
-        } else {
-            System.out.println("failed to compute the sum: " + error);
-        }
-    });
+  CompletableFuture<Map<Path, Long>> filesFuture = findFileSizesAsync(Path.of("src"));
+  filesFuture.thenApply(files -> {
+    long total = 0;
+    for (long size : files.values())
+      total += size;
+    return total;
+  }).whenComplete((total, exception) -> {
+    if (exception != null) {
+      System.out.println("it failed because " + exception);
+    } else {
+      System.out.println("the total is " + total);
+    }
+  });
 }
 ```
 
-If the inlined lambdas are confusing, then try writing them out.
-Here's the last example again, with some helping variables:
-```
-public static void main(String[] args) throws Exception {
-    // both Function and BiConsumer are built-in functional interfaces
-
-    // function that takes List<Integer> as an argument, returns Integer
-    Function<List<Integer>, Integer> numberListToSum = numbers -> {
-        int sum = 0;
-        for (int number : numbers)
-            sum += number;
-        return sum;
-    };
-
-    // function that takes two arguments: Integer, Throwable
-    BiConsumer<Integer, Throwable> printResults = (sum, error) -> {
-        if (error == null) {
-            System.out.println("the sum is " + sum);
-        } else {
-            System.out.println("failed to compute the sum: " + error);
-        }
-    };
-
-    findNumbers().thenApply(numberListToSum).whenComplete(printResults);
-}
-```
+Now the result is printed in the background thread instead of main.
 
 ### Task: WikiAnalyzer1
 
@@ -168,17 +156,17 @@ public static void main(String[] args) throws Exception {
    ```
    long countDots(String str) { .. }
    ```
-3. Use `thenApply` and `whenComplete` to download some articles in parallel and print out the number of dots in each of them.
-   Don't use `get` on the CompletableFuture.
+3. Start downloading the articles in the background in parallel.
+   Make sure the downloads run in parallel (start all background threads before calling `get` on anything).
+   Finally call `get` on each CompletableFuture, count the dots in the downloaded articles and print out the counts.
 
 ### Task: WikiAnalyzer2
 
 1. Make a copy of WikiAnalyzer1
-2. Change the copy so the articles are downloaded in parallel, but the results are printed out by the main method.
-   1. use the same `thenApply`
-   2. replace `whenComplete` with `get`
-   3. make sure the downloads run in parallel (create all CompletableFutures before calling `get` on any of them)
-   4. try to download an invalid article (use some garbage for the url) and ensure the exception reaches the main method
+2. Change the copy so that the dots are also counted in the background thread.
+   1. use `thenApply` to move the counting to the background thread
+   2. call `get` and print the counts in the main thread (`get` should return just the number of dots)
+   3. try to download an invalid article (use some garbage for the url) and check that the exception is thrown when calling `get`
 
 ## CountdownLatch
 
