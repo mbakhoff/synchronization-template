@@ -223,14 +223,14 @@ class SimpleBlockingQueue<T> {
     public void put(T item) {
         synchronized (items) {
             items.add(item);
-            items.notifyAll();
+            items.notifyAll(); // wake up waiting threads
         }
     }
 
     public T take() throws InterruptedException {
         synchronized (items) {
             while (items.isEmpty())
-                items.wait();
+                items.wait(); // wait for notifyAll
             return items.remove(0);
         }
     }
@@ -239,29 +239,14 @@ class SimpleBlockingQueue<T> {
 
 While the idea of wait/notifyAll sounds simple, there are a few gotchas to this mechanism.
 
-[JLS 17.1](https://docs.oracle.com/javase/specs/jls/se9/html/jls-17.html#jls-17.1)
-*Each object in Java is associated with a monitor, which a thread can lock or unlock.
-Only one thread at a time may hold a lock on a monitor.
-Any other threads attempting to lock that monitor are blocked until they can obtain a lock on that monitor.*
+The main idea of synchronized blocks is that only a single thread can lock an object at a time.
+Let's take another look at the `SimpleBlockingQueue` example above.
+If one thread is inside the `take` method waiting for a new item to be added to the queue, then how can another thread `put` anything to the same queue?
+The thread calling `put` would wait for the thread inside `take` to finish, which in turn is waiting for something to finish `put`.
+It turns out that calling `items.wait()` will **unlock** the `items` object until the thread wakes up again.
+When the thread does wake up, it must first wait until it can lock `items` again before it can continue.
 
-Note that a monitor remembers the thread that has locked, but not yet unlocked it.
-The thread is "holding a lock" on that monitor.
-
-```
-// thread locks the monitor of this (can block)
-synchronized (this) {
-  // code runs while holding the lock
-}
-// thread unlocks the monitor of this
-```
-
-* Calling `notifyAll` on an object wakes up all threads that are calling `wait` on the same object.
-  To call `notifyAll` or `wait` on an object, the calling thread must be holding a lock on the object's monitor.
-* Calling `wait` will block the thread and **unlock the monitor**.
-  When a waiting thread is unblocked, then it must lock the monitor again before it can continue (and possibly wait for the lock).
-* A call to `wait` can sometimes randomly unblock even before `notifyAll` is called.
-  This is called a [*spurious wake-up*](https://docs.oracle.com/javase/specs/jls/se9/html/jls-17.html#jls-17.2.1).
-  Calling `wait` should always be in a loop that checks if waiting should continue.
+Note that to call wait/notifyAll on some object, the thread must be inside a synchronised block that has locked that same object.
 
 ### Task: MyLatch
 
