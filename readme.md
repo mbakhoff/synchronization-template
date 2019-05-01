@@ -246,7 +246,7 @@ The thread calling `put` would wait for the thread inside `take` to finish, whic
 It turns out that calling `items.wait()` will **unlock** the `items` object until the thread wakes up again.
 When the thread does wake up, it must first wait until it can lock `items` again before it can continue.
 
-Note that to call wait/notifyAll on some object, the thread must be inside a synchronised block that has locked that same object.
+Note that to call wait/notifyAll on some object, the thread must be inside a synchronized block that has locked that same object.
 
 ### Task: MyLatch
 
@@ -268,4 +268,25 @@ If the thread is currently waiting in an interruptible method (wait, sleep etc.)
 Otherwise, the interrupted flag is set in the thread and the next time it reaches an interruptible method, the exception is thrown.
 Interrupts can only successfully stop the thread when the program's code doesn't ignore the InterruptedException and/or the interrupt flag.
 
-The interrupted flag can be checked using `Thread#isInterrupted` and cleared using `Thread#interrupted` (stupid and confusing naming).
+When you need to catch an InterruptedException but can't stop the thread from continuing, then it's nice to restore the interrupt flag.
+As always: if possible, then don't catch the exception and let it crash the thread.
+```
+try {
+  Thread.sleep(1000);
+} catch (InterruptedException e) {
+  Thread.currentThread().interrupt();
+  throw new RuntimeException(e);
+}
+```
+
+The interrupted flag can be manually checked using `Thread#isInterrupted` and checked+cleared using `Thread#interrupted` (stupid and confusing naming):
+
+```
+while (true) {
+  if (Thread.interrupted()) {
+    // clear the interrupt flag and throw
+    throw new InterruptedException();
+  }
+  // else do more work
+}
+```
