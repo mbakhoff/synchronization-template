@@ -105,12 +105,13 @@ public static void main(String[] args) throws Exception {
 }
 
 static CompletableFuture<Long> alsoGetTheTotalSize(CompletableFuture<Map<Path, Long>> filesFuture) {
-  return filesFuture.thenApply(files -> {
+  CompletableFuture<Long> totalFuture = filesFuture.thenApply(files -> {
     long total = 0;
     for (long size : files.values())
       total += size;
     return total;
   });
+  return totalFuture;
 }
 ```
 
@@ -121,30 +122,6 @@ The new CompletableFuture for the total is immediately returned and the actual c
 `main` also gives the background thread a new task using `thenAccept`: when the background thread is done with the files, it should print them all out.
 
 Both these extra tasks are done when the background thread calls `complete` on the first CompletableFuture.
-
-CompletableFutures have many other useful methods.
-Among others is the `whenComplete` method which can be used to specify a function to be run when the CompletableFuture is completed, either successfully or with an exception.
-For example, finding and printing the total could be rewritten as follows:
-
-```
-public static void main(String[] args) throws Exception {
-  CompletableFuture<Map<Path, Long>> filesFuture = findFileSizesAsync(Path.of("src"));
-  filesFuture.thenApply(files -> {
-    long total = 0;
-    for (long size : files.values())
-      total += size;
-    return total;
-  }).whenComplete((total, exception) -> {
-    if (exception != null) {
-      System.out.println("it failed because " + exception);
-    } else {
-      System.out.println("the total is " + total);
-    }
-  });
-}
-```
-
-Now the result is printed in the background thread instead of main.
 
 ### Task: WikiAnalyzer1
 

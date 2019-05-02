@@ -17,6 +17,8 @@ public class WikiAnalyzer1 {
     }
 
     public static CompletableFuture<String> download(String url) {
+        // a web page url is basically a link to a text file (html file that the browser can render)
+        // hint: use URL#openStream + InputStream#readAllBytes
         // TODO: implement
         return null;
     }
