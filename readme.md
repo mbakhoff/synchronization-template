@@ -263,30 +263,21 @@ It's not possible to just stop/kill threads, because that would prevent unlockin
 As an alternative, a thread can be interrupted.
 Interrupting a thread is a way to tell it to please shut down as soon as possible.
 
-InterruptedException is thrown if and only if the `interrupt` method is called on the thread that is running the interruptible code.
+InterruptedException is thrown if and only if `Thread#interrupt` is called on a thread.
 If the thread is currently waiting in an interruptible method (wait, sleep etc.) then the method immediately stops waiting and throws an InterruptedException.
-Otherwise, the interrupted flag is set in the thread and the next time it reaches an interruptible method, the exception is thrown.
-Interrupts can only successfully stop the thread when the program's code doesn't ignore the InterruptedException and/or the interrupt flag.
+Otherwise, the thread remembers the interrupt and the InterruptedException is thrown the next time the thread reaches an interruptible method.
+To make your own code interruptible, simply check `Thread#interrupted` in strategic places and throw the InterruptedException when needed.
 
-When you need to catch an InterruptedException but can't stop the thread from continuing, then it's nice to restore the interrupt flag.
-As always: if possible, then don't catch the exception and let it crash the thread.
+Interrupts can only successfully stop the thread when the program's code doesn't ignore the InterruptedException.
+When you need to catch an InterruptedException but can't stop the thread from continuing, then it's nice to restore the interrupt.
+
 ```
 try {
   Thread.sleep(1000);
 } catch (InterruptedException e) {
-  Thread.currentThread().interrupt();
+  Thread.currentThread().interrupt(); // restore
   throw new RuntimeException(e);
 }
 ```
 
-The interrupted flag can be manually checked using `Thread#isInterrupted` and checked+cleared using `Thread#interrupted` (stupid and confusing naming):
-
-```
-while (true) {
-  if (Thread.interrupted()) {
-    // clear the interrupt flag and throw
-    throw new InterruptedException();
-  }
-  // else do more work
-}
-```
+As always: if possible, then don't catch the exception and let it crash the thread.
